@@ -37,7 +37,7 @@ public class AssetbundleTest
     [MenuItem("AssetBundleTest/PackSelect(Uncompress)")]
     public static void PackSelectUncompress()
     {
-        PackSelect(BuildAssetBundleOptions.DeterministicAssetBundle | BuildAssetBundleOptions.UncompressedAssetBundle);
+        PackSelect(BuildAssetBundleOptions.DeterministicAssetBundle | BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ChunkBasedCompression);
     }
 
     private static void PackSelect(BuildAssetBundleOptions opt, string extName = null)
@@ -48,7 +48,7 @@ public class AssetbundleTest
         if (importer == null) return;
 
         AssetBundleBuild build = new AssetBundleBuild();
-        build.assetBundleName = string.Concat(importer.assetBundleName, "_", extName);
+        build.assetBundleName = string.IsNullOrEmpty(extName) ? importer.assetBundleName : string.Concat(importer.assetBundleName, "_", extName);
         build.assetNames = new string[] { path };
 
         BuildPipeline.BuildAssetBundles(Path.Combine(Application.dataPath, "MyBundles"), new AssetBundleBuild[] { build }, opt, EditorUserBuildSettings.activeBuildTarget);
@@ -59,19 +59,36 @@ public class AssetbundleTest
     public static void PackSelectALL()
     {
         Object[] o = Selection.GetFiltered<Object>(SelectionMode.Assets);
-        AssetBundleBuild[] buildArray = new AssetBundleBuild[o.Length];
+        List<AssetBundleBuild> assetBundleBuilds = new List<AssetBundleBuild>(o.Length);
         AssetImporter importer;
         AssetBundleBuild build;
-        for (int i = 0; i < buildArray.Length; i++)
+        int index;
+        for (int i = 0; i < o.Length; i++)
         {
             importer = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(o[i]));
-            build = new AssetBundleBuild();
-            build.assetBundleName = importer.assetBundleName;
-            build.assetNames = new string[] { importer.assetPath };
-            buildArray[i] = build;
+            //判断是否存在重复
+            index = assetBundleBuilds.FindIndex((x) => x.assetBundleName == importer.assetBundleName);
+            if (index == -1)
+            {
+                build = new AssetBundleBuild();
+                build.assetBundleName = importer.assetBundleName;
+                build.assetNames = new string[] { importer.assetPath };
+                assetBundleBuilds.Add(build);
+            }
+            else
+            {
+                //重复，则添加进去
+                build = assetBundleBuilds[index];
+                string[] newAssets = new string[build.assetNames.Length + 1];
+                newAssets[0] = importer.assetPath;
+                System.Array.Copy(build.assetNames, 0, newAssets, 1, build.assetNames.Length);
+                build.assetNames = newAssets;
+                assetBundleBuilds[index] = build;
+            }
         }
-
-        BuildPipeline.BuildAssetBundles(Path.Combine(Application.dataPath, "MyBundles"), buildArray, BuildAssetBundleOptions.DeterministicAssetBundle, EditorUserBuildSettings.activeBuildTarget);
+        //System.Span<int> span = stackalloc int[2];
+        //System.Runtime.InteropServices.Marshal.AllocHGlobal();
+        BuildPipeline.BuildAssetBundles(Path.Combine(Application.dataPath, "MyBundles"), assetBundleBuilds.ToArray(), BuildAssetBundleOptions.DeterministicAssetBundle, EditorUserBuildSettings.activeBuildTarget);
         AssetDatabase.Refresh();
     }
 
